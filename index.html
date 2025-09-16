@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bản Đồ Du Lịch Hải Phòng (Mới)</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Routing Machine CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Routing Machine JS -->
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <!-- Turf.js for union -->
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <!-- osmtogeojson for Overpass data -->
+    <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.4/osmtogeojson.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100%; }
+        .labelstyle { 
+            font-size: 10px; /* Thu nhỏ font */
+            background: rgba(255, 255, 255, 0.9); /* Bảng trắng mờ */
+            border-radius: 2px; 
+            padding: 1px 3px; /* Thu nhỏ padding */
+        }
+        .emoji-icon { font-size: 20px; } /* Kích thước emoji */
+        .leaflet-routing-container { width: 320px; } /* Tùy chỉnh kích thước routing control */
+        #routing-panel { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+        #routing-panel.hidden { display: none; }
+        #routing-panel label { display: block; margin-bottom: 5px; }
+        #routing-panel select { width: 100%; margin-bottom: 10px; }
+        #toggle-btn { position: absolute; top: 10px; right: 10px; z-index: 1001; background: white; border: 1px solid #ccc; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button id="toggle-btn">Đóng Tra cứu</button>
+    <div id="routing-panel">
+        <label for="start-select">Điểm xuất phát:</label>
+        <select id="start-select"></select>
+        <label for="end-select">Điểm đến:</label>
+        <select id="end-select"></select>
+    </div>
+
+    <script>
+        // Khởi tạo bản đồ
+        var map = L.map('map').setView([20.9, 106.4], 10);
+
+        // Thêm tile layer không nhãn
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors & <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        // Xóa tất cả marker hiện có (nếu có)
+        map.eachLayer(function(layer) {
+            if (layer instanceof L.Marker) {
+                map.removeLayer(layer);
+            }
+        });
+
+        // Danh sách các điểm với tên và mô tả (cập nhật tọa độ mới)
+        var locations = [
+            { lat: 20.81917, lng: 106.72472, type: 'airport', name: 'Sân bay Cát Bi', desc: 'Sân bay quốc tế chính của Hải Phòng.' },
+            { lat: 20.8560, lng: 106.6875, type: 'train', name: 'Ga Hải Phòng', desc: 'Ga tàu chính kết nối với Hà Nội.' },
+            { lat: 20.9473, lng: 106.3300, type: 'train', name: 'Ga Hải Dương', desc: 'Ga tàu ở trung tâm Hải Dương.' },
+            { lat: 20.86806, lng: 106.65676, type: 'bus', name: 'Bến xe Thượng Lý', desc: 'Bến xe liên tỉnh lớn.' },
+            { lat: 20.94657, lng: 106.32947, type: 'bus', name: 'Bến xe Hải Dương', desc: 'Bến xe chính của tỉnh Hải Dương.' },
+            { lat: 20.86481, lng: 106.68345, type: 'port', name: 'Bến cảng Hải Phòng', desc: 'Cảng biển lớn nhất miền Bắc.' },
+            { lat: 20.866466746213405, lng: 106.67750247778201, type: 'port', name: 'Bến Bính', desc: 'Bến cảng container chính.' },
+            { lat: 20.813206782752374, lng: 106.89523039139442, type: 'port', name: 'Bến phà Đồng Bài', desc: 'Bến phà hỗ trợ ở Hải Phòng.' },
+            { lat: 20.804181327735026, lng: 106.9226162899252, type: 'port', name: 'Bến Tàu Cao Tốc Cái Viềng', desc: 'Bến tàu cao tốc trên đảo Cát Bà.' },
+            { lat: 20.820597614888417, lng: 106.92294802570031, type: 'port', name: 'Bến phà Cái Viềng', desc: 'Bến phà chính trên đảo Cát Bà.' },
+            { lat: 20.8067, lng: 107.0017, type: 'attraction', name: 'Đảo Cát Bà', desc: 'Đảo đẹp với vườn quốc gia và vịnh.' },
+            { lat: 20.795446246858212, lng: 106.99707930449904, type: 'attraction', name: 'Vườn Quốc gia Cát Bà', desc: 'Vườn quốc gia với hệ sinh thái đa dạng trên đảo Cát Bà.' },
+            { lat: 20.81271836043703, lng: 106.88670652872281, type: 'attraction', name: 'Cáp treo Cát Bà', desc: 'Cáp treo ngắm cảnh đảo Cát Bà.' },
+            { lat: 20.7136, lng: 106.7894, type: 'attraction', name: 'Bãi biển Đồ Sơn', desc: 'Bãi biển nghỉ dưỡng gần thành phố.' },
+            { lat: 20.85741, lng: 106.68180, type: 'attraction', name: 'Nhà hát lớn Hải Phòng', desc: 'Kiến trúc Pháp cổ, biểu tượng văn hóa.' },
+            { lat: 20.84, lng: 106.67, type: 'attraction', name: 'Chùa Dư Hàng', desc: 'Chùa cổ linh thiêng.' },
+            { lat: 21.15, lng: 106.3667, type: 'attraction', name: 'Chùa Côn Sơn', desc: 'Khu di tích lịch sử và tâm linh.' },
+            { lat: 21.1721, lng: 106.5744, type: 'attraction', name: 'Đền Kiếp Bạc', desc: 'Đền thờ Trần Hưng Đạo.' },
+            { lat: 20.9861, lng: 106.3, type: 'attraction', name: 'Làng gốm Chu Đậu', desc: 'Làng nghề gốm truyền thống.' },
+            { lat: 20.86023, lng: 106.68823, type: 'hotel', name: 'Pullman Hai Phong Grand Hotel', desc: 'Khách sạn 5 sao trung tâm.' },
+            { lat: 20.865, lng: 106.66, type: 'hotel', name: 'Sheraton Hai Phong', desc: 'Khách sạn cao cấp gần Vinhomes.' },
+            { lat: 20.84, lng: 106.67, type: 'hotel', name: 'Hotel Nikko Hai Phong', desc: 'Khách sạn Nhật Bản phong cách.' },
+            { lat: 20.94, lng: 106.33, type: 'hotel', name: 'Purple Lotus Hotel', desc: 'Khách sạn 3 sao trung tâm.' },
+            { lat: 20.94, lng: 106.32, type: 'hotel', name: 'Phuong Anh Hotel', desc: 'Khách sạn tiện nghi giá rẻ.' },
+            { lat: 20.8600, lng: 106.6880, type: 'restaurant', name: 'Food Connexion', desc: 'Nhà hàng quốc tế tại Pullman, phục vụ nhóm 20+ người.' },
+            { lat: 20.8650, lng: 106.6600, type: 'restaurant', name: 'Harbor Restaurant', desc: 'Nhà hàng buffet tại Sheraton, sức chứa lớn.' },
+            { lat: 20.8445, lng: 106.6823, type: 'seafood', name: 'The Three M Restaurant', desc: 'Nhà hàng hải sản cao cấp, phục vụ nhóm.' },
+            { lat: 20.8500, lng: 106.6700, type: 'seafood', name: 'Phương Nam Restaurant', desc: 'Hải sản tươi ngon, phục vụ nhóm 20+ người.' },
+            { lat: 20.787587659255458, lng: 106.9814791576015, type: 'resort', name: 'Cat Ba Holiday Retreat', desc: 'Resort nghỉ dưỡng trên đảo Cát Bà.' },
+            { lat: 20.77372812609912, lng: 106.9772501942932, type: 'resort', name: 'Cat Ba Eco Lodge', desc: 'Resort sinh thái trên đảo Cát Bà.' },
+            { lat: 20.71955517775071, lng: 107.05656699348432, type: 'resort', name: 'Flamingo Lan Hạ Bay Resort', desc: 'Resort cao cấp trên đảo Cát Bà.' },
+            { lat: 20.71815444926483, lng: 107.0513154740618, type: 'resort', name: 'The May Legend CatBa Beach Resort & Spa', desc: 'Resort bãi biển sang trọng ở Cát Bà.' },
+            { lat: 20.715659803444456, lng: 107.05102677494868, type: 'resort', name: 'Cat Ba Island Resort & Spa', desc: 'Resort nghỉ dưỡng và spa ở Cát Bà.' },
+            { lat: 20.678200029246973, lng: 106.81274980971408, type: 'resort', name: 'Hòn Dấu Resort', desc: 'Resort nghỉ dưỡng Đồ Sơn phù hợp gia đình.' },
+            { lat: 20.680968395663932, lng: 106.81238929320666, type: 'resort', name: 'Tecco Đồ Sơn Hotel', desc: 'Khách sạn nghỉ dưỡng ở Đồ Sơn.' },
+            { lat: 20.79724405590673, lng: 106.89154960991851, type: 'specialty', name: 'Cửa hàng nước mắm Cát Hải', desc: 'Cửa hàng đặc sản nước mắm nổi tiếng.' },
+            { lat: 20.84566773205937, lng: 106.72091159543274, type: 'specialty', name: 'Chả Chìa Hạ Lũng Bác Hoạt', desc: 'Cửa hàng chả chìa đặc sản Hải Phòng.' },
+            { lat: 20.854942815661307, lng: 106.68940504719494, type: 'specialty', name: 'Vua Đặc Sản tại Hải Phòng', desc: 'Cửa hàng bán đặc sản Hải Phòng.' }
+        ];
+
+        // Hàm tạo icon emoji
+        function getIcon(type) {
+            var emoji;
+            switch (type) {
+                case 'airport': emoji = '✈️'; break;
+                case 'train': emoji = '🚂'; break;
+                case 'bus': emoji = '🚌'; break;
+                case 'port': emoji = '⚓'; break;
+                case 'attraction': emoji = '🌴'; break;
+                case 'hotel': emoji = '🏨'; break;
+                case 'restaurant': emoji = '🍽️'; break;
+                case 'seafood': emoji = '🍽️'; break; // Dùng cùng emoji với restaurant
+                case 'resort': emoji = '🏖️'; break;
+                case 'specialty': emoji = '🍤'; break; // Emoji tôm cho đặc sản
+                default: emoji = '📍'; break;
+            }
+            return L.divIcon({
+                html: `<span class="emoji-icon">${emoji}</span>`,
+                className: '',
+                iconSize: [24, 24],
+                iconAnchor: [12, 24],
+                popupAnchor: [0, -24]
+            });
+        }
+
+        // Thêm marker với icon emoji, tooltip và popup
+        locations.forEach(function(loc) {
+            var marker = L.marker([loc.lat, loc.lng], { icon: getIcon(loc.type) }).addTo(map);
+            
+            // Hiển thị tên luôn (tooltip permanent)
+            marker.bindTooltip(loc.name, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -10],
+                className: 'labelstyle'
+            });
+            
+            // Popup chi tiết
+            marker.bindPopup('<b>' + loc.name + '</b><br>' + loc.desc);
+            
+            // Event click: zoom và open popup
+            marker.on('click', function() {
+                map.setView([loc.lat, loc.lng], 15);
+                marker.openPopup();
+            });
+        });
+
+        // Tạo routing control với profile 'car' (tương tự xe khách nội thành)
+        var routingControl = L.Routing.control({
+            waypoints: [
+                L.latLng(locations[0].lat, locations[0].lng), // Default start
+                L.latLng(locations[1].lat, locations[1].lng)  // Default end
+            ],
+            routeWhileDragging: true,
+            router: L.Routing.osrmv1({ 
+                serviceUrl: 'https://router.project-osrm.org/route/v1', 
+                profile: 'car'  // Profile 'car' phù hợp cho xe khách nội thành, ước tính tốc độ trung bình ~50-60km/h
+            }),
+            showAlternatives: true,
+            lineOptions: { styles: [{ color: 'blue', weight: 4 }] },
+            addWaypoints: false  // Không cho phép thêm waypoint động
+        }).addTo(map);
+
+        // Định nghĩa nhãn cho từng loại
+        var typeLabels = {
+            'airport': 'Sân bay',
+            'train': 'Ga tàu',
+            'bus': 'Bến xe',
+            'port': 'Cảng/Bến',
+            'attraction': 'Điểm thu hút',
+            'hotel': 'Khách sạn',
+            'restaurant': 'Nhà hàng',
+            'seafood': 'Nhà hàng hải sản',
+            'resort': 'Resort',
+            'specialty': 'Đặc sản'
+        };
+
+        // Nhóm các địa điểm theo type
+        var groups = {};
+        locations.forEach(function(loc, index) {
+            var groupType = loc.type;
+            if (!groups[groupType]) {
+                groups[groupType] = [];
+            }
+            groups[groupType].push({index: index, name: loc.name});
+        });
+
+        // Thêm optgroup vào select
+        var startSelect = document.getElementById('start-select');
+        var endSelect = document.getElementById('end-select');
+        
+        Object.keys(groups).forEach(function(groupType) {
+            var optgroup = document.createElement('optgroup');
+            optgroup.label = typeLabels[groupType] || groupType;
+            
+            groups[groupType].forEach(function(item) {
+                var option = document.createElement('option');
+                option.value = item.index;
+                option.text = item.name;
+                optgroup.appendChild(option);
+            });
+            
+            startSelect.appendChild(optgroup.cloneNode(true));
+            endSelect.appendChild(optgroup);
+        });
+
+        // Cập nhật waypoints khi thay đổi select
+        function updateRouting() {
+            var startIndex = startSelect.value;
+            var endIndex = endSelect.value;
+            if (startIndex !== '' && endIndex !== '') {
+                var startLoc = locations[startIndex];
+                var endLoc = locations[endIndex];
+                routingControl.setWaypoints([
+                    L.latLng(startLoc.lat, startLoc.lng),
+                    L.latLng(endLoc.lat, endLoc.lng)
+                ]);
+            }
+        }
+
+        startSelect.addEventListener('change', updateRouting);
+        endSelect.addEventListener('change', updateRouting);
+
+        // Toggle panel và routing control
+        var toggleBtn = document.getElementById('toggle-btn');
+        var routingPanel = document.getElementById('routing-panel');
+        var isOpen = true;
+        toggleBtn.addEventListener('click', function() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                routingPanel.classList.remove('hidden');
+                map.addControl(routingControl);
+                toggleBtn.textContent = 'Đóng Tra cứu';
+            } else {
+                routingPanel.classList.add('hidden');
+                map.removeControl(routingControl);
+                toggleBtn.textContent = 'Mở Tra cứu';
+            }
+        });
+
+        // Tải ranh giới từ Overpass Turbo
+        var overpassQuery = `
+            [out:json];
+            area["name"="Việt Nam"]->.vietnam;
+            (
+                relation["admin_level"="4"]["name"="Hải Phòng"](area.vietnam);
+                relation["admin_level"="4"]["name"="Hải Dương"](area.vietnam);
+            );
+            out geom;
+        `;
+        fetch('https://overpass-api.de/api/interpreter', {
+            method: 'POST',
+            body: overpassQuery
+        })
+            .then(response => response.json())
+            .then(data => {
+                var haiphongFeature = data.elements.find(e => e.tags.name === 'Hải Phòng');
+                var haiduongFeature = data.elements.find(e => e.tags.name === 'Hải Dương');
+                
+                if (haiphongFeature && haiduongFeature) {
+                    // Chuyển đổi dữ liệu Overpass sang GeoJSON
+                    var haiphongGeoJSON = osmtogeojson({ elements: [haiphongFeature] });
+                    var haiduongGeoJSON = osmtogeojson({ elements: [haiduongFeature] });
+                    
+                    // Hợp nhất ranh giới
+                    var unionFeature = turf.union(haiphongGeoJSON.features[0], haiduongGeoJSON.features[0]);
+                    
+                    // Thêm layer ranh giới
+                    L.geoJSON(unionFeature, {
+                        style: {
+                            color: 'black',
+                            weight: 5,
+                            fillOpacity: 0
+                        }
+                    }).addTo(map);
+                }
+            });
+    </script>
+</body>
+</html>
