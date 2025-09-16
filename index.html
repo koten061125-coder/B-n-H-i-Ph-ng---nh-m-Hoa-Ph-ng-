@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Bản Đồ Du Lịch Hải Phòng (Mới)</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -17,7 +17,7 @@
     <!-- osmtogeojson for Overpass data -->
     <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.4/osmtogeojson.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; }
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
         #map { height: 100vh; width: 100%; }
         .labelstyle { 
             font-size: 10px; /* Thu nhỏ font */
@@ -26,12 +26,52 @@
             padding: 1px 3px; /* Thu nhỏ padding */
         }
         .emoji-icon { font-size: 20px; } /* Kích thước emoji */
-        .leaflet-routing-container { width: 320px; } /* Tùy chỉnh kích thước routing control */
-        #routing-panel { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); }
+        .leaflet-routing-container { width: 90%; max-width: 320px; font-size: 14px; } /* Tối ưu kích thước trên điện thoại */
+        #routing-panel { 
+            position: fixed; 
+            top: 10px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            z-index: 1000; 
+            background: white; 
+            padding: 10px; 
+            border-radius: 5px; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.3); 
+            width: 90%; 
+            max-width: 300px; 
+        }
         #routing-panel.hidden { display: none; }
-        #routing-panel label { display: block; margin-bottom: 5px; }
-        #routing-panel select { width: 100%; margin-bottom: 10px; }
-        #toggle-btn { position: absolute; top: 10px; right: 10px; z-index: 1001; background: white; border: 1px solid #ccc; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+        #routing-panel label { display: block; margin-bottom: 5px; font-size: 14px; }
+        #routing-panel select { width: 100%; margin-bottom: 10px; font-size: 14px; padding: 5px; }
+        #toggle-btn { 
+            position: fixed; 
+            top: 10px; 
+            right: 10px; 
+            z-index: 1001; 
+            background: white; 
+            border: 1px solid #ccc; 
+            padding: 5px 10px; 
+            border-radius: 3px; 
+            cursor: pointer; 
+            font-size: 14px; 
+        }
+        @media (max-width: 768px) {
+            #routing-panel { 
+                top: 60px; 
+                width: 95%; 
+                max-width: 350px; 
+            }
+            #toggle-btn { 
+                top: 10px; 
+                right: 10px; 
+                padding: 4px 8px; 
+                font-size: 12px; 
+            }
+            .leaflet-routing-container { 
+                width: 95%; 
+                font-size: 12px; 
+            }
+        }
     </style>
 </head>
 <body>
@@ -151,7 +191,7 @@
             });
         });
 
-        // Tạo routing control với profile 'car' (tương tự xe khách nội thành)
+        // Tạo routing control với profile 'car' và điều chỉnh tốc độ cho xe khách nội thành
         var routingControl = L.Routing.control({
             waypoints: [
                 L.latLng(locations[0].lat, locations[0].lng), // Default start
@@ -160,11 +200,16 @@
             routeWhileDragging: true,
             router: L.Routing.osrmv1({ 
                 serviceUrl: 'https://router.project-osrm.org/route/v1', 
-                profile: 'car'  // Profile 'car' phù hợp cho xe khách nội thành, ước tính tốc độ trung bình ~50-60km/h
+                profile: 'car',
+                options: {
+                    // Điều chỉnh tốc độ trung bình cho xe khách nội thành (~30-40 km/h do giao thông đông)
+                    speed: 40 / 3.6 // Chuyển đổi từ km/h sang m/s (40 km/h ≈ 11.11 m/s)
+                }
             }),
             showAlternatives: true,
             lineOptions: { styles: [{ color: 'blue', weight: 4 }] },
-            addWaypoints: false  // Không cho phép thêm waypoint động
+            addWaypoints: false,
+            createMarker: function() { return null; } // Ẩn marker mặc định của routing
         }).addTo(map);
 
         // Định nghĩa nhãn cho từng loại
